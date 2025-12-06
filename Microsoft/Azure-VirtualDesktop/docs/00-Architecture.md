@@ -1,1 +1,1 @@
-# 00 – Architecture
+# Architecture
