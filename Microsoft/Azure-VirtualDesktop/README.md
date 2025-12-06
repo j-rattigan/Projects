@@ -1,4 +1,10 @@
 # Azure Virtual Desktop – Home Lab
+![Azure](https://img.shields.io/badge/Azure-Cloud-blue?logo=microsoftazure)
+![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-AVD-orange?logo=microsoft)
+![AADDS](https://img.shields.io/badge/Entra-Domain%20Services-AADDS-green?logo=microsoft)
+![FSLogix](https://img.shields.io/badge/FSLogix-Profiles-9B59B6)
+![IaC](https://img.shields.io/badge/Infrastructure%20as%20Code-Bicep-2ECC71)
+![Platform](https://img.shields.io/badge/Platform-Home%20Lab-1abc9c)
 
 This repository contains a hands-on **Azure Virtual Desktop (AVD)** lab designed to mirror a realistic enterprise deployment while staying small enough to run in a personal subscription.
 
@@ -10,7 +16,16 @@ It focuses on:
 - **Kerberos-based authentication**
 - **Clean virtual network design with peering + custom DNS**
 
----
+## 📘 Table of Contents
+
+- [Overview](#azure-virtual-desktop--home-lab)
+- [Architecture](#-lab-architecture-high-level)
+- [Contents](#-contents)
+- [Quick Start](#-quick-start)
+- [Status](#-status)
+- [Documentation](#documentation)
+- [Scripts](#scripts)
+- [Roadmap](#roadmap)
 
 ## 📌 Contents
 
