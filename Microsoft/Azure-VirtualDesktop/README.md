@@ -1,4 +1,3 @@
-azure-avd-homelab/
 │
 ├── README.md                     <-- Main overview + diagrams + links
 ├── docs/
