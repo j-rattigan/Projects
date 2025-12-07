@@ -1,68 +1,114 @@
-
-# 06 – FSLogix Configuration (Advanced – Local Storage Edition)
+# 06b – FSLogix Configuration (Advanced – Local SMB/DFS Edition)
 ![FSLogix](https://img.shields.io/badge/FSLogix-Advanced%20Configuration-orange)
-![LocalStorage](https://img.shields.io/badge/Storage-Local%20Disk-blue)
-![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Profiles-0a84ff)
+![DFS](https://img.shields.io/badge/Storage-DFS%20Namespace-blue)
+![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Profile%20Containers-0a84ff)
 
 ---
 
-# 🧭 1. Overview
+# 🧭 1. Overview  
+This document provides the **advanced FSLogix configuration for Local SMB/DFS storage**, using:
 
-This document provides the **full advanced FSLogix configuration**, matching the structure, tone, and layout of the Azure edition — but designed specifically for **local storage** instead of Azure Files or SMB shares.
+```
+\\home.lab\DFSRoot\Profiles
+```
 
-Local FSLogix is ideal for:
+This mode simulates **real enterprise FSLogix deployments** (like Cabrini) but without Azure Files.  
+It supports:
 
-- AVD home labs  
-- Proof-of-concept deployments  
-- Image building  
-- Testing FSLogix behaviour without Azure Files / Kerberos  
-- Environments without AADDS  
+- Multi–session host AVD  
+- Kerberos or NTLM authentication  
+- DFS namespace & file server resiliency  
+- True roaming FSLogix profile containers  
 
-This version behaves exactly like the Azure edition, but with **zero network dependencies**.
+This is the **correct architecture for your home lab** when you want to mirror real-world enterprise AVD behaviour.
 
 ---
 
-# 🧱 2. FSLogix Architecture (Local Disk Mode)
+# 🧱 2. Architecture – DFS-backed FSLogix  
 
 ```mermaid
 flowchart LR
     User["User Logs In"]
     SH["AVD Session Host<br>FSLogix Agent"]
-    LOCAL["Local Disk<br>C:\FSLogix\Profiles\<user>.vhdx"]
+    DFS["Local DFS Namespace<br>\\\\home.lab\\DFSRoot\\Profiles"]
+    FS01["File Server<br>Hosts Profile VHDX"]
 
     User --> SH
-    SH -->|Mount VHDX| LOCAL
-    LOCAL --> SH
+    SH -->|SMB 445| DFS
+    DFS --> FS01
+    FS01 --> SH
 ```
 
-Key differences from Azure mode:
+### How it works  
+FSLogix dynamically mounts:
 
-| Capability | Azure Files Mode | Local Storage Mode |
-|------------|------------------|---------------------|
-| Kerberos auth | ✔ Required | ❌ Not used |
-| DNS dependency | ✔ Yes | ❌ None |
-| NTFS permissions | Share + NTFS | Local NTFS only |
-| Performance | Network latency | Local disk speed |
-| Best for | Enterprise | Lab / Single host |
+```
+\\home.lab\DFSRoot\Profiles\<user>\<SID>.vhdx
+```
+
+This matches enterprise behaviour **exactly**, except storage lives on your home server.
 
 ---
 
-# 🗂️ 3. Profile Container vs Office Container
+# 🗂️ 3. FSLogix Containers Overview
 
 | Feature | Profile Container | Office Container |
 |--------|-------------------|------------------|
 | Full Windows profile | ✔ | ❌ |
-| Outlook OST | ✔ | ✔ |
-| Search roaming | ✔ | ✔ |
+| OST caching | ✔ | ✔ |
 | Teams cache | ✔ | ✔ |
-| Faster login | ❌ | ✔ |
+| Better login speed | ❌ | ✔ |
+| Recommended for AVD | ✔ | Conditional |
 
-**Recommendation:**  
-Use **Profile Container only** for labs unless testing Office split scenarios.
+Recommendation:  
+**Use Profile Container**, and optionally Office Container if you want OST/search split testing.
 
 ---
 
-# ⚙️ 4. FSLogix Base Registry Configuration (Local Mode)
+# ⚙️ 4. Required DFS Folder Structure
+
+### Create DFS path:
+```
+\\home.lab\DFSRoot\Profiles
+```
+
+### On the file server (FS01):
+```
+D:\FSLogix\Profiles
+```
+
+### Map DFS to backend:
+```
+DFSRoot
+ └── Profiles → \\FS01.home.lab\FSLogixProfiles$
+```
+
+---
+
+# 🔐 5. NTFS + Share Permissions (Enterprise Standard)
+
+### **Share permissions** (FSLogixProfiles$)
+| Identity | Permission |
+|----------|------------|
+| Everyone | Full Control (share only) |
+
+### **NTFS permissions**  
+On the backend folder (`D:\FSLogix\Profiles`):
+
+| Identity | Permission |
+|----------|------------|
+| SYSTEM | Full Control |
+| Administrators | Full Control |
+| Domain Computers | Read & Execute |
+| Domain Users | Modify |
+
+This is **identical to Azure Files hybrid mode**.
+
+---
+
+# ⚙️ 6. FSLogix Registry Configuration (DFS Mode)
+
+Use your DFS path:
 
 ```reg
 [HKLM\SOFTWARE\FSLogix\Profiles]
@@ -73,20 +119,26 @@ Use **Profile Container only** for labs unless testing Office split scenarios.
 "DeleteLocalProfileWhenVHDShouldApply"=dword:1
 "FlipFlopProfileDirectoryName"=dword:1
 "PreventLoginWithFailure"=dword:1
-"VHDLocations"=multi:"C:\FSLogix\Profiles"
+"VHDLocations"=multi:"\\\\home.lab\\DFSRoot\\Profiles"
 ```
 
-Create directories:
+This registry configuration works for:
 
-```powershell
-New-Item -ItemType Directory -Path "C:\FSLogix\Profiles" -Force
-```
+- AADDS joined session hosts  
+- On-prem AD joined session hosts  
+- NTLM fallback scenarios  
 
 ---
 
-# 🧹 5. Redirections.xml (Deep Dive — Local Disk Edition)
+# 🧹 7. Redirections.xml (Same as Enterprise Azure)
 
-Same structure as Azure edition but optimised for shrinking the local VHDX:
+Place at:
+
+```
+C:\Program Files\FSLogix\Apps\Redirections.xml
+```
+
+Recommended config:
 
 ```xml
 <FrxProfileFolderRedirection ExcludeCommonFolders="0">
@@ -101,135 +153,122 @@ Same structure as Azure edition but optimised for shrinking the local VHDX:
 </FrxProfileFolderRedirection>
 ```
 
-Place in:
-
-```
-C:\Program Files\FSLogix\Apps\Redirections.xml
-```
-
 ---
 
-# 🌩️ 6. Cloud Cache (Local-to-Local Redundancy)
+# 🌩️ 8. Cloud Cache (Optional but Supported)
 
-Even without Azure Files, Cloud Cache can be used to replicate profiles between local disks:
+You can run Cloud Cache with DFS:
 
 ```reg
 [HKLM\SOFTWARE\FSLogix\Profiles]
 "CloudCacheEnabled"=dword:1
-"CCDLocations"=multi:"type=local,connectionString=C:\FSLogix\Profiles;type=local,connectionString=D:\FSLogixBackup"
+"CCDLocations"=multi:"type=smb,connectionString=\\\\home.lab\\DFSRoot\\Profiles;type=smb,connectionString=\\\\fs02.home.lab\\ProfilesBackup"
 ```
 
-Useful for:
+Benefits:
 
-- Testing corruption handling  
-- Simulating multi-disk resilience  
+- Resilience testing  
+- Faster reconnect  
+- Identical behaviour to Cloud Cache on Azure Files  
 
 ---
 
-# 📦 7. VHDX Sizing & Lifecycle
+# 📦 9. VHDX Sizing Guidance
 
-Recommended sizing for local FSLogix:
+| Workload Type | Recommended VHDX Size |
+|---------------|------------------------|
+| Home Lab | 10–20 GB |
+| Standard AVD Desktop | 20–30 GB |
+| Teams/Office Heavy | 30–40 GB |
 
-| Workload | VHDX Size |
-|----------|------------|
-| Light AVD lab | 10–20 GB |
-| Standard desktop | 20–30 GB |
-| Teams/Office-heavy | 30–40 GB |
-
-Lifecycle diagram (mirrors Azure edition):
+VHDX Lifecycle diagram:
 
 ```mermaid
 flowchart TD
-    Login["User Login"] --> Mount["Mount VHDX"]
+    Login["User Login"] --> Mount["Mount VHDX from DFS"]
     Mount --> Online["Active Session"]
     Online --> Dismount["Dismount on Logoff"]
-    Dismount --> Cleanup["Release Handles / Close"]
+    Dismount --> Cleanup["Unlock VHDX"]
 ```
 
 ---
 
-# 🧰 8. FSLogix Logs (Same as Azure Edition)
+# 🧰 10. FSLogix Logs & Diagnostics
 
-Log directory:
+Path:
 
 ```
 C:\ProgramData\FSLogix\Logs\Profiles
 ```
 
-Most important logs:
+Key logs:
 
-| Log | Purpose |
-|------|----------|
-| frxsvc.log | Service startup + mount operations |
-| profile_load.log | Profile load cycle |
-| frxdrv.log | VHDX driver events |
+- frxsvc.log  
+- profile_load.log  
+- frxdrv.log  
+
+These logs behave identical regardless of storage backend.
 
 ---
 
-# 🚀 9. Teams & Office Optimisation (Local)
+# 🚀 11. Teams Optimisation
 
-Same structure as Azure version, adapted for local:
+Enable AVD-optimised Teams mode:
 
 ```reg
 [HKLM\SOFTWARE\Microsoft\Teams]
 "IsWVDEnvironment"=dword:1
 ```
 
-Highly recommended:
+Account for:
 
-- Redirect Teams cache via Redirections.xml  
-- Ensure VHDX stays < 20–30 GB  
-- Use clean image with WebView2 preinstalled  
-
----
-
-# 🔐 10. Security Hardening (Local Edition)
-
-Unlike Azure Files, local storage relies only on **NTFS** and **BitLocker**.
-
-### Required NTFS permissions (local folder):
-
-| Identity | Permission |
-|----------|-------------|
-| Users | Modify |
-| SYSTEM | Full Control |
-| Administrators | Full Control |
-
-### Highly recommended:
-
-Enable BitLocker:
-
-```powershell
-manage-bde -on C:
-```
+- Teams cache redirected by XML  
+- WebView2 preinstalled  
+- Use the new Teams client if testing modern setups  
 
 ---
 
-# 🧪 11. Troubleshooting Matrix (Matches Azure Version)
+# 🔐 12. Security Hardening (DFS Version)
 
-| Symptom | Likely Cause | Fix |
-|---------|--------------|------|
-| Temp profile | VHDLocations misconfigured | Check registry |
-| Black login screen | Bloated VHDX / FSLogix hang | Trim VHDX + check redirections.xml |
-| `.lock` file persists | VHDX not dismounted cleanly | Delete `.lock` file |
-| Very slow login | Large Teams/Edge cache | Add redirections |
-| Profile corruption | Bad shutdown / host crash | Reset VHDX |
-| FSLogix not loading | Service disabled | Restart `frxsvc` |
+### Recommended for home-lab production simulation:
+
+- Enable **Kerberos** (if host is domain joined)  
+- Avoid NTLM if possible  
+- BitLocker your FS server volumes  
+- Limit admin access  
+- Apply disk quotas if needed  
+- DFS-R optional for multi-server redundancy  
+
+This layout mirrors real hospitals/enterprise FSLogix deployments.
 
 ---
 
-# ✔ 12. Summary
+# 🧪 13. Troubleshooting Matrix
 
-Local FSLogix (Advanced Edition) provides:
+| Symptom | Cause | Fix |
+|--------|--------|-----|
+| Temp profile | VHD path inaccessible | Check SMB, DFS namespace |
+| Profile not mounting | NTFS denies access | Reapply NTFS perms |
+| `.lock` file persists | Improper unmount | Delete lock → retry login |
+| Black login screen | Profile bloat | Trim VHD + apply redirections |
+| Slow login | DFS referral delays | Add static DFS referral |
+| Profile corruption | Host crash | Reset VHDX |
 
-- ✓ Zero-dependency FSLogix testing  
-- ✓ Fast logons via local disk  
-- ✓ Ideal lab configuration  
-- ✓ Full compatibility with AVD  
-- ✓ Simple NTFS-based security  
-- ✓ Identical operational flow to Azure edition  
+---
 
-Not recommended for production — but **perfect for learning AVD deeply without Azure complexity**.
+# ✔ 14. Summary
+
+The DFS-backed FSLogix configuration:
+
+- Fully mirrors enterprise FSLogix deployments  
+- Works with multiple AVD session hosts  
+- Requires only NTFS + SMB  
+- Supports Kerberos if domain joined  
+- Eliminates Azure Files cost in home lab  
+- Provides real-world troubleshooting practice  
+- Perfectly aligns with **Cabrini-style AVD architecture**  
+
+This is the **correct FSLogix storage model** for your home AVD learning environment.
 
 ---
 
