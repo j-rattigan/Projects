@@ -138,7 +138,7 @@ flowchart LR
 
 | Scenario | Recommended Storage |
 |----------|---------------------|
-| **Cabrini production deployment** | Azure Files Premium |
+| **Production deployment** | Azure Files Premium |
 | Home lab, cost-sensitive | DFS / SMB |
 | High compliance requirement | Azure Files |
 | Existing on-prem file servers | DFS |
