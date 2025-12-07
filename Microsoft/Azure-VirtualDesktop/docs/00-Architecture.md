@@ -177,20 +177,3 @@ Enterprise-grade, highly available, Microsoft-supported.
 
 ### ✔ Local DFS File Server  
 Perfect for your home lab, nearly identical behaviour to production.
-
-This makes your **AVD project portfolio-ready**, showing you understand both:
-
-- **Production-grade cloud storage**, and  
-- **Hybrid/on-prem storage integrations**  
-
-A critical skill for EUC engineering and AVD architecture roles.
-
----
-
-# 📎 Diagram Export Notice
-Mermaid diagrams are embedded and will render automatically in GitHub.  
-If you want **downloadable PNG/SVG versions**, just tell me:
-
-**“Export diagrams for 00”**
-
----
