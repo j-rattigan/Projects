@@ -8,8 +8,6 @@
 # 🧭 1. Overview
 This document provides the updated **AVD Architecture Overview**, now including a clearly structured **“Choose Azure Files OR DFS”** storage decision model.
 
-This matches real enterprise AVD architecture (Cabrini-style) while fully supporting your home-lab setup.
-
 ---
 
 # 🧱 2. Core AVD Architecture
@@ -32,7 +30,7 @@ This remains unchanged — storage only impacts where FSLogix profile containers
 # 🎯 3. Storage Architecture (Choose One)
 
 Azure Virtual Desktop supports multiple backend storage options for FSLogix profile containers.  
-Your environment supports **two valid architectures**:
+My environment supports **two valid architectures**:
 
 ---
 
@@ -61,7 +59,7 @@ flowchart LR
 ```
 
 ### ✔ Choose Azure Files when:
-- Deploying AVD in **Cabrini or enterprise environments**
+- Deploying AVD in **Enterprise environments**
 - Need DR, snapshots, retention
 - Want Microsoft supportability
 - Running large concurrent user workloads
@@ -73,7 +71,7 @@ flowchart LR
 **Use for:**  
 Home labs, PoC environments, or when enterprise has existing file servers.
 
-Example DFS path used in your lab:
+Example DFS path used in my lab:
 
 ```
 \\home.lab\DFSRoot\Profiles
@@ -128,7 +126,7 @@ flowchart LR
 | Feature | Azure Files | DFS |
 |--------|-------------|------|
 | Identity | Kerberos via AADDS/Entra | AD DS or NTLM fallback |
-| Backup | Azure Backup, snapshots | Your backup tools (Veeam, etc.) |
+| Backup | Azure Backup, snapshots | Backup tools (Veeam, etc.) |
 | Throughput | Azure-managed scaling | Local hardware performance |
 | Cost | Consumption-based | Zero cloud cost |
 | DR | Geo-zone redundancy | Depends on DFS-R strategy |
@@ -155,7 +153,7 @@ flowchart LR
 \\storageacct.file.core.windows.net\profiles
 ```
 
-### DFS (your home lab)
+### DFS (Home Lab)
 ```
 \\home.lab\DFSRoot\Profiles
 ```
@@ -176,4 +174,4 @@ You now have two valid, documented FSLogix storage backends:
 Enterprise-grade, highly available, Microsoft-supported.
 
 ### ✔ Local DFS File Server  
-Perfect for your home lab, nearly identical behaviour to production.
+Perfect for a home lab, nearly identical behaviour to production.
