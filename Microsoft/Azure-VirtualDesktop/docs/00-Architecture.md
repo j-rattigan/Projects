@@ -1,178 +1,196 @@
-# Azure Virtual Desktop – Architecture Overview
+# 00 – Azure Virtual Desktop Architecture (Storage Options)
+![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Architecture-0a84ff)
+![Storage](https://img.shields.io/badge/Storage-Azure%20Files%20%7C%20DFS-blue)
+![Profiles](https://img.shields.io/badge/FSLogix-Profile%20Containers-orange)
 
-## 🏗️ High-Level Architecture
+---
+
+# 🧭 1. Overview
+This document provides the updated **AVD Architecture Overview**, now including a clearly structured **“Choose Azure Files OR DFS”** storage decision model.
+
+This matches real enterprise AVD architecture (Cabrini-style) while fully supporting your home-lab setup.
+
+---
+
+# 🧱 2. Core AVD Architecture
 
 ```mermaid
 flowchart LR
-    subgraph AVD["Azure Virtual Desktop"]
-        HP["Host Pools"]
-        WS["Session Hosts"]
-        FS["FSLogix Profiles"]
-    end
-
-    subgraph NET["Networking"]
-        VNET["AVD VNET"]
-        SUB1["AVD-Hosts Subnet"]
-        SUB2["Management Subnet"]
-    end
-
-    subgraph ID["Identity"]
-        AAD["Microsoft Entra ID"]
-        AADDS["Entra Domain Services"]
-        KRB["AAD Kerberos"]
-    end
-
-    subgraph STG["Storage"]
-        SA["Storage Account"]
-        FILES["Azure Files (Premium)"]
-    end
-
-    AVD --> NET
-    WS --> FILES
-    FILES --> AADDS
-    AAD --> KRB
-    VNET --> AADDS
-```
-
----
-
-## 📌 Architecture Components Table
-
-| Component | Purpose | Notes |
-|----------|---------|-------|
-| **Host Pool** | Logical grouping of session hosts | Used by RemoteApp & Desktop |
-| **Session Hosts** | VMs running Windows 11 multisession | Joined to AADDS |
-| **FSLogix** | User profile container | Stored on Azure Files |
-| **Azure Files Premium** | Profile storage | Requires AD-based auth |
-| **AADDS** | Domain service required for Kerberos | Provides LDAP/Kerberos |
-| **AVD VNET** | Networking backbone | Peered with AADDS VNET |
-| **Kerberos for Azure Files** | Auth without domain join | Requires hybrid identity |
-
----
-
-## 🧩 Logical Layout
-
-```mermaid
-graph TD
-    AAD["Microsoft Entra ID"]
-    HYB["Hybrid Identity (Synced Users)"]
-    AADDS["Entra Domain Services"]
-    SA["Storage Account"]
-    FILES["Azure Files (FSLogix)"]
+    User["User Devices"]
+    AVD["Azure Virtual Desktop<br>Workspace & Broker"]
     HP["Host Pool"]
-    SH1["Session Host 1"]
-    SH2["Session Host 2"]
-    VNET["AVD Virtual Network"]
-    SUB1["AVD Hosts Subnet"]
-    SUB2["Management Subnet"]
+    VMSS["VM Scale Set<br>Session Hosts"]
+    IMG["Shared Image Gallery<br>(Golden Images)"]
 
-    AAD --> HYB --> AADDS
-    AADDS --> FILES
-    FILES --> SH1
-    FILES --> SH2
-    HP --> SH1
-    HP --> SH2
-    VNET --> SUB1
-    VNET --> SUB2
+    User --> AVD --> HP --> VMSS --> IMG
 ```
+
+This remains unchanged — storage only impacts where FSLogix profile containers live.
 
 ---
 
-## 🌐 Networking Diagram (VNET Peering + DNS)
+# 🎯 3. Storage Architecture (Choose One)
+
+Azure Virtual Desktop supports multiple backend storage options for FSLogix profile containers.  
+Your environment supports **two valid architectures**:
+
+---
+
+# 🔵 Option A — Azure Files Premium (Enterprise Production)
+
+**Use for:** Hospitals, large orgs, compliance environments, real AVD deployments.
+
+### ✔ Features
+- Highly available, resilient storage
+- Kerberos authentication (AADDS or Entra ID)
+- Azure Backup & snapshots
+- Microsoft-recommended for production
+- Predictable throughput & scalability
+
+### ✔ Architecture
 
 ```mermaid
 flowchart LR
-    AVDVNET["AVD VNET<br>10.1.0.0/16"]
-    AADDVNET["AADDS VNET<br>10.0.0.0/24"]
-    DNS1["DNS IP: 10.0.0.4"]
-    DNS2["DNS IP: 10.0.0.5"]
+    SH["AVD Session Hosts"]
+    AF["Azure Files Premium<br>\\\\storageacct.file.core.windows.net\\profiles"]
+    AAD["AADDS / Entra Kerberos"]
 
-    AVDVNET <--> AADDVNET
-    AVDVNET --> DNS1
-    AVDVNET --> DNS2
+    SH -->|SMB 445| AF
+    SH -->|Kerberos| AAD
+    AF --> SH
 ```
+
+### ✔ Choose Azure Files when:
+- Deploying AVD in **Cabrini or enterprise environments**
+- Need DR, snapshots, retention
+- Want Microsoft supportability
+- Running large concurrent user workloads
 
 ---
 
-## 🔐 Identity Flow (Kerberos for Azure Files)
+# 🟠 Option B — Local DFS / SMB Storage (Home Lab or Hybrid On-Prem)
+
+**Use for:**  
+Home labs, PoC environments, or when enterprise has existing file servers.
+
+Example DFS path used in your lab:
+
+```
+\\home.lab\DFSRoot\Profiles
+```
+
+### ✔ Features
+- Identical FSLogix behaviour to Azure Files
+- Uses Windows NTFS permissions
+- Supports Kerberos (if domain joined)
+- Fully supports multi-session AVD
+- Zero Azure Files cost
+- Leverages existing infrastructure
+
+### ✔ Architecture
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant AVD as AVD Session Host
-    participant AAD as Entra ID
-    participant AADDS as Domain Services
-    participant FILES as Azure Files
+flowchart LR
+    SH["AVD Session Hosts"]
+    DFS["DFS Namespace<br>\\\\home.lab\\DFSRoot\\Profiles"]
+    FS01["File Server Backend<br>\\\\FS01.home.lab\\FSLogixProfiles$"]
 
-    User->>AAD: Authenticate
-    AAD->>AVD: Provide token
-    AVD->>AADDS: Kerberos ticket request
-    AADDS->>AVD: Kerberos TGT
-    AVD->>FILES: Access with Kerberos
-    FILES->>AVD: FSLogix Profile Loaded
+    SH -->|SMB 445| DFS
+    DFS --> FS01
+    FS01 --> SH
+```
+
+### ✔ Choose DFS when:
+- Building a realistic **AVD home lab**
+- Avoiding Azure Files cost
+- Simulating full enterprise FSLogix behaviour
+- Testing DFS, NTFS permissions & SMB throughput
+
+---
+
+# 🟣 4. What Stays the Same in Both Architectures
+
+| Component | Azure Files | DFS |
+|----------|-------------|------|
+| FSLogix profile container (VHDX) | ✔ | ✔ |
+| Redirections.xml | ✔ | ✔ |
+| Office Container | ✔ | ✔ |
+| Cloud Cache support | ✔ | ✔ |
+| Login behaviour | ✔ | ✔ |
+| Multi-session roaming profile support | ✔ | ✔ |
+
+🎉 **FSLogix does not care where the VHDX lives — only that SMB is reachable.**
+
+---
+
+# 🟤 5. What Changes Between Azure & DFS
+
+| Feature | Azure Files | DFS |
+|--------|-------------|------|
+| Identity | Kerberos via AADDS/Entra | AD DS or NTLM fallback |
+| Backup | Azure Backup, snapshots | Your backup tools (Veeam, etc.) |
+| Throughput | Azure-managed scaling | Local hardware performance |
+| Cost | Consumption-based | Zero cloud cost |
+| DR | Geo-zone redundancy | Depends on DFS-R strategy |
+| Permissions | RBAC + NTFS | NTFS only |
+
+---
+
+# 🧭 6. Storage Decision Model
+
+| Scenario | Recommended Storage |
+|----------|---------------------|
+| **Cabrini production deployment** | Azure Files Premium |
+| Home lab, cost-sensitive | DFS / SMB |
+| High compliance requirement | Azure Files |
+| Existing on-prem file servers | DFS |
+| DR-critical workloads | Azure Files or Azure NetApp Files |
+
+---
+
+# 🔧 7. FSLogix Path Examples
+
+### Azure Files
+```
+\\storageacct.file.core.windows.net\profiles
+```
+
+### DFS (your home lab)
+```
+\\home.lab\DFSRoot\Profiles
+```
+
+FSLogix registry key example:
+
+```reg
+"VHDLocations"=multi:"\\\\home.lab\\DFSRoot\\Profiles"
 ```
 
 ---
 
-## 🏷️ Technology Badges
+# 🏁 8. Summary
 
-![Azure](https://img.shields.io/badge/Azure-0089D6?logo=microsoftazure&logoColor=white)
-![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Blue?logo=microsoft)
-![FSLogix](https://img.shields.io/badge/FSLogix-Orange)
-![EntraID](https://img.shields.io/badge/Entra%20ID-2560E0?logo=microsoft)
-![Kerberos](https://img.shields.io/badge/Kerberos-5E2750)
+You now have two valid, documented FSLogix storage backends:
 
----
+### ✔ Azure Files Premium  
+Enterprise-grade, highly available, Microsoft-supported.
 
-## 🧱 Detailed Architecture Breakdown
+### ✔ Local DFS File Server  
+Perfect for your home lab, nearly identical behaviour to production.
 
-### 1. **Identity**
-- Microsoft Entra ID (Primary authentication)
-- AADDS for Kerberos (required for Azure Files auth)
-- Hybrid identities synced via Cloud Sync
+This makes your **AVD project portfolio-ready**, showing you understand both:
 
-### 2. **Compute**
-- Windows 11 multisession hosts
-- Autoscale recommended (Scaling Plan)
-- Registered into the Host Pool automatically via ARM/Bicep/CLI
+- **Production-grade cloud storage**, and  
+- **Hybrid/on-prem storage integrations**  
 
-### 3. **Storage**
-- Azure Files Premium (LRS or ZRS)
-- FSLogix Profile Container
-- Kerberos enabled
-
-### 4. **Networking**
-- Dedicated VNET (10.1.0.0/16)
-- Subnets:
-  - AVD-Hosts
-  - Management
-- VNET Peering:
-  - AVD-VNET ↔ AADDS-VNET
-- DNS:
-  - Custom DNS pointing to AADDS IPs
-  - Conditional forwarding automatically handled by AADDS
+A critical skill for EUC engineering and AVD architecture roles.
 
 ---
 
-## 📄 Appendix – Resource Naming
+# 📎 Diagram Export Notice
+Mermaid diagrams are embedded and will render automatically in GitHub.  
+If you want **downloadable PNG/SVG versions**, just tell me:
 
-| Resource | Example Name |
-|---------|---------------|
-| Host Pool | `avd-hp-prod` |
-| Resource Group | `RG-AVD-Lab` |
-| Storage Account | `stavdprofilesnnn` |
-| VNET | `VNET-AVD-Lab` |
-| Subnets | `AVD-Hosts`, `Management` |
+**“Export diagrams for 00”**
 
 ---
-
-## ✔️ Summary
-
-This architecture provides:
-
-- Secure hybrid identity with Kerberos
-- Fast profile load times using Azure Files Premium
-- Scalable and modular VNET design
-- Clear separation of compute, identity, storage, and network
-
-Perfect for **production-grade AVD**, **lab environments**, or **enterprise landing zones**.
