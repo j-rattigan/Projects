@@ -1,203 +1,178 @@
-# 00 - Azure Virtual Desktop Architecture
+# Azure Virtual Desktop – Architecture Overview
 
-## 1. Overview
+## 🏗️ High-Level Architecture
 
-This document provides a high‑level and technical architecture overview for the Azure Virtual Desktop (AVD) lab deployment.  
-It covers identity, networking, storage, compute, FSLogix, Kerberos for Azure Files, and supporting Azure resources.
+```mermaid
+flowchart LR
+    subgraph AVD["Azure Virtual Desktop"]
+        HP["Host Pools"]
+        WS["Session Hosts"]
+        FS["FSLogix Profiles"]
+    end
 
----
+    subgraph NET["Networking"]
+        VNET["AVD VNET"]
+        SUB1["AVD-Hosts Subnet"]
+        SUB2["Management Subnet"]
+    end
 
-## 2. High-Level Architecture Diagram
+    subgraph ID["Identity"]
+        AAD["Microsoft Entra ID"]
+        AADDS["Entra Domain Services"]
+        KRB["AAD Kerberos"]
+    end
 
-```
-+--------------------------+        +-----------------------------+
-|     Azure AD / Entra ID |        |  Azure AD Domain Services   |
-|  (Identity & AuthN/Z)   |        |  (Kerberos / LDAP / DNS)    |
-+------------+-------------+        +-------------+---------------+
-             |                                       |
-             | Hybrid Identity Sync                  |
-             |                                       |
-+------------v-------------+        +----------------v-------------+
-|         Users            |  RDP   |    AADDS-VNET (10.0.0.0/24)  |
-|  (Windows / macOS etc.) +-------->  Domain Controllers (A/B)    |
-+--------------------------+        |    DNS: 10.0.0.4 / 10.0.0.5  |
-                                    +------------------------------+
+    subgraph STG["Storage"]
+        SA["Storage Account"]
+        FILES["Azure Files (Premium)"]
+    end
 
-                                   Peered VNETs (bidirectional)
-
-+---------------------------------------------------------------+
-|                    VNET-AVD-Lab (10.1.0.0/16)                 |
-|                                                               |
-|  +------------------+     +------------------+                |
-|  | AVD Session Host |     | AVD Session Host |  Scaling Plan |
-|  | VM 01 (10.1.1.x) | ... | VM 02 (10.1.1.x) | <------------->|
-|  +------------------+     +------------------+                |
-|            | FSLogix Profile Container Access                 |
-|            |                                                  |
-|  +-----------------------------+                               |
-|  | Azure Files (Profile SMB)  | Kerberos Auth (AADDS)         |
-|  | Storage Account:           | DNS-integrated share          |
-|  | \stavdprofiles1.file.core |                               |
-|  +-----------------------------+                               |
-+---------------------------------------------------------------+
-
+    AVD --> NET
+    WS --> FILES
+    FILES --> AADDS
+    AAD --> KRB
+    VNET --> AADDS
 ```
 
 ---
 
-## 3. Identity Architecture
+## 📌 Architecture Components Table
 
-### Components
-| Component | Purpose |
-|----------|----------|
-| **Microsoft Entra ID** | Primary identity provider for AVD, portal access, RBAC |
-| **Azure AD Domain Services (AADDS)** | Kerberos + LDAP domain used by session hosts |
-| **Hybrid Identity (optional)** | Allows syncing users from on‑prem AD if used |
-
-### Key Decisions
-- Using **Azure AD DS** for simplicity — no on‑prem DC required.  
-- Users authenticate via **Entra ID**, session hosts join **AADDS** domain.  
-- FSLogix profiles use **Kerberos authentication** (no access keys).
+| Component | Purpose | Notes |
+|----------|---------|-------|
+| **Host Pool** | Logical grouping of session hosts | Used by RemoteApp & Desktop |
+| **Session Hosts** | VMs running Windows 11 multisession | Joined to AADDS |
+| **FSLogix** | User profile container | Stored on Azure Files |
+| **Azure Files Premium** | Profile storage | Requires AD-based auth |
+| **AADDS** | Domain service required for Kerberos | Provides LDAP/Kerberos |
+| **AVD VNET** | Networking backbone | Peered with AADDS VNET |
+| **Kerberos for Azure Files** | Auth without domain join | Requires hybrid identity |
 
 ---
 
-## 4. Networking Architecture
+## 🧩 Logical Layout
 
-### VNETs
-| VNET | Address Space | Purpose |
-|------|---------------|---------|
-| **AADDS‑VNET** | `10.0.0.0/24` | Domain controllers, DNS, LDAP/Kerberos |
-| **AVD‑Lab‑VNET** | `10.1.0.0/16` | Session hosts, Bastion, management |
+```mermaid
+graph TD
+    AAD["Microsoft Entra ID"]
+    HYB["Hybrid Identity (Synced Users)"]
+    AADDS["Entra Domain Services"]
+    SA["Storage Account"]
+    FILES["Azure Files (FSLogix)"]
+    HP["Host Pool"]
+    SH1["Session Host 1"]
+    SH2["Session Host 2"]
+    VNET["AVD Virtual Network"]
+    SUB1["AVD Hosts Subnet"]
+    SUB2["Management Subnet"]
 
-### Subnets (AVD)
-| Subnet | CIDR | Purpose |
-|--------|------|---------|
-| `default` | 10.1.0.0/24 | Shared resources |
-| `AVD-Hosts` | 10.1.1.0/24 | Session Host VMs |
-| `Management` | 10.1.2.0/24 | Bastion / Jumpbox |
-
-### DNS Forwarding
-- AVD VNET uses **DNS 10.0.0.4 and 10.0.0.5** from AADDS.
-- Required so domain join and Kerberos succeed.
-
-### Peering
-| Peering | Direction | Purpose |
-|---------|-----------|---------|
-| AVD-VNET → AADDS-VNET | Enabled | Domain join, DNS, Kerberos |
-| AADDS-VNET → AVD-VNET | Enabled | DC responses, profile access |
-
-Both peerings enable:
-- **Forwarded traffic**
-- **Remote VNET access**
-
----
-
-## 5. Storage Architecture (FSLogix)
-
-### Storage Account
-| Setting | Value |
-|--------|--------|
-| Type | Azure Files (Standard) |
-| Redundancy | LRS/GRS (lab uses GRS) |
-| Identity Source | **Azure AD DS Kerberos** |
-| Authentication | **Kerberos only** |
-
-### FSLogix Profile Share
-```
-\stavdprofiles1.file.core.windows.net\profiles
+    AAD --> HYB --> AADDS
+    AADDS --> FILES
+    FILES --> SH1
+    FILES --> SH2
+    HP --> SH1
+    HP --> SH2
+    VNET --> SUB1
+    VNET --> SUB2
 ```
 
-Permissions:
-- AADDS Group: `FSLogix-Users`
-  - `Modify` NTFS + Share permissions
-- Session Hosts: machine accounts require share access
+---
 
-### Kerberos Setup Summary
-- Enable `AADDS` identity source on the share
-- Create Kerberos keys automatically during setup
-- Rotate keys via PowerShell if required
+## 🌐 Networking Diagram (VNET Peering + DNS)
+
+```mermaid
+flowchart LR
+    AVDVNET["AVD VNET<br>10.1.0.0/16"]
+    AADDVNET["AADDS VNET<br>10.0.0.0/24"]
+    DNS1["DNS IP: 10.0.0.4"]
+    DNS2["DNS IP: 10.0.0.5"]
+
+    AVDVNET <--> AADDVNET
+    AVDVNET --> DNS1
+    AVDVNET --> DNS2
+```
 
 ---
 
-## 6. Compute Architecture
+## 🔐 Identity Flow (Kerberos for Azure Files)
 
-### AVD Session Hosts
-- Windows 11 / Windows Server (lab uses Win11 Multi-session)
-- Joined to **AADDS domain**
-- Deployed via:
-  - Scaling Plan
-  - Host Pool (Pooled, breadth-first)
+```mermaid
+sequenceDiagram
+    participant User
+    participant AVD as AVD Session Host
+    participant AAD as Entra ID
+    participant AADDS as Domain Services
+    participant FILES as Azure Files
 
-### Host Pool Components
-| Component | Purpose |
-|----------|----------|
-| **Host Pool** | Logical grouping of session hosts |
-| **Application Group** | Assigns RemoteApp/Desktop access |
-| **Workspace** | Where users connect (Remote Desktop app) |
-
----
-
-## 7. Security Architecture
-
-### Access Control
-- Entra ID roles:
-  - **AVD Administrator**
-  - **Virtual Machine Contributor**
-  - **Storage File Data SMB Share Contributor**
-
-### Network Security
-- NSGs applied to:
-  - AVD session hosts
-  - Management subnet
-- Allow:
-  - RDP (only if Bastion not used)
-  - SMB to storage
-  - LDAP/Kerberos to AADDS
-
-### Encryption
-- Data encrypted at‑rest via **MMK**
-- SMB traffic encrypted in‑transit
+    User->>AAD: Authenticate
+    AAD->>AVD: Provide token
+    AVD->>AADDS: Kerberos ticket request
+    AADDS->>AVD: Kerberos TGT
+    AVD->>FILES: Access with Kerberos
+    FILES->>AVD: FSLogix Profile Loaded
+```
 
 ---
 
-## 8. Deployment Flow Summary
+## 🏷️ Technology Badges
 
-1. Deploy **Resource Group**
-2. Deploy **AADDS**
-3. Deploy **Two VNETs**:
-   - AADDS-VNET
-   - AVD-Lab-VNET
-4. Add subnets and NSGs
-5. Peer VNETs
-6. Set DNS in AVD VNET → 10.0.0.4/10.0.0.5
-7. Deploy Storage account
-8. Enable **AADDS Kerberos**
-9. Deploy AVD Host Pool + Session hosts
-10. Install FSLogix
-11. Assign AVD access to users
+![Azure](https://img.shields.io/badge/Azure-0089D6?logo=microsoftazure&logoColor=white)
+![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Blue?logo=microsoft)
+![FSLogix](https://img.shields.io/badge/FSLogix-Orange)
+![EntraID](https://img.shields.io/badge/Entra%20ID-2560E0?logo=microsoft)
+![Kerberos](https://img.shields.io/badge/Kerberos-5E2750)
 
 ---
 
-## 9. Architecture Decision Record (ADR Summary)
+## 🧱 Detailed Architecture Breakdown
 
-| Decision | Outcome |
-|----------|---------|
-| **Use Azure AD Domain Services** | Simplifies identity, enables Kerberos |
-| **Use Azure Files for FSLogix** | No IaaS file server required |
-| **Peered VNETs instead of hub-spoke** | Simplified lab design |
-| **Kerberos auth instead of access keys** | Secure, aligns with production design |
-| **AVD pooled model** | Lower cost, easier scaling |
+### 1. **Identity**
+- Microsoft Entra ID (Primary authentication)
+- AADDS for Kerberos (required for Azure Files auth)
+- Hybrid identities synced via Cloud Sync
+
+### 2. **Compute**
+- Windows 11 multisession hosts
+- Autoscale recommended (Scaling Plan)
+- Registered into the Host Pool automatically via ARM/Bicep/CLI
+
+### 3. **Storage**
+- Azure Files Premium (LRS or ZRS)
+- FSLogix Profile Container
+- Kerberos enabled
+
+### 4. **Networking**
+- Dedicated VNET (10.1.0.0/16)
+- Subnets:
+  - AVD-Hosts
+  - Management
+- VNET Peering:
+  - AVD-VNET ↔ AADDS-VNET
+- DNS:
+  - Custom DNS pointing to AADDS IPs
+  - Conditional forwarding automatically handled by AADDS
 
 ---
 
-## 10. Future Enhancements
+## 📄 Appendix – Resource Naming
 
-- Replace AADDS with **Entra ID Domain Join + Azure Files Kerberos (Native)**  
-- Move to **Hub-Spoke** with Azure Firewall  
-- Add **Terraform/Bicep** deployments  
-- Introduce monitoring via **Log Analytics + Diagnostics**  
-- Implement DR by replicating FSLogix and host pool resources  
+| Resource | Example Name |
+|---------|---------------|
+| Host Pool | `avd-hp-prod` |
+| Resource Group | `RG-AVD-Lab` |
+| Storage Account | `stavdprofilesnnn` |
+| VNET | `VNET-AVD-Lab` |
+| Subnets | `AVD-Hosts`, `Management` |
 
 ---
 
-_End of Architecture Document_
+## ✔️ Summary
+
+This architecture provides:
+
+- Secure hybrid identity with Kerberos
+- Fast profile load times using Azure Files Premium
+- Scalable and modular VNET design
+- Clear separation of compute, identity, storage, and network
+
+Perfect for **production-grade AVD**, **lab environments**, or **enterprise landing zones**.
