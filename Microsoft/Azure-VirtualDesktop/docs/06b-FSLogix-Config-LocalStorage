@@ -1,54 +1,68 @@
-# 06 – FSLogix Configuration (Local File Storage Edition)
-![FSLogix](https://img.shields.io/badge/FSLogix-Local%20Profiles-orange)
-![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Lab%20Mode-0a84ff)
+
+# 06 – FSLogix Configuration (Advanced – Local Storage Edition)
+![FSLogix](https://img.shields.io/badge/FSLogix-Advanced%20Configuration-orange)
+![LocalStorage](https://img.shields.io/badge/Storage-Local%20Disk-blue)
+![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Profiles-0a84ff)
 
 ---
 
 # 🧭 1. Overview
-This document provides FSLogix configuration guidance for **local file storage**, ideal for:
 
-- Home labs  
-- AVD single-host or small PoC  
-- Scenarios without Azure Files / Kerberos  
-- Fast troubleshooting environments  
+This document provides the **full advanced FSLogix configuration**, matching the structure, tone, and layout of the Azure edition — but designed specifically for **local storage** instead of Azure Files or SMB shares.
 
-It removes the need for SMB shares, Azure Files, AADDS, Kerberos, or DNS complexity.
+Local FSLogix is ideal for:
 
----
+- AVD home labs  
+- Proof-of-concept deployments  
+- Image building  
+- Testing FSLogix behaviour without Azure Files / Kerberos  
+- Environments without AADDS  
 
-# 🗂️ 2. Architecture (Local Mode)
-
-```
-User Login
-   ↓
-FSLogix Service
-   ↓
-Mount local VHDX
-   ↓
-C:\FSLogix\Profiles\<username>\profile.vhdx
-```
-
-No network dependency → **fast + reliable for lab work**.
+This version behaves exactly like the Azure edition, but with **zero network dependencies**.
 
 ---
 
-# 🧱 3. Local Profile Storage Structure
+# 🧱 2. FSLogix Architecture (Local Disk Mode)
 
-Recommended folder:
+```mermaid
+flowchart LR
+    User["User Logs In"]
+    SH["AVD Session Host<br>FSLogix Agent"]
+    LOCAL["Local Disk<br>C:\FSLogix\Profiles\<user>.vhdx"]
 
+    User --> SH
+    SH -->|Mount VHDX| LOCAL
+    LOCAL --> SH
 ```
-C:\FSLogix\Profiles
-```
 
-Create folder:
+Key differences from Azure mode:
 
-```powershell
-New-Item -ItemType Directory -Path "C:\FSLogix\Profiles"
-```
+| Capability | Azure Files Mode | Local Storage Mode |
+|------------|------------------|---------------------|
+| Kerberos auth | ✔ Required | ❌ Not used |
+| DNS dependency | ✔ Yes | ❌ None |
+| NTFS permissions | Share + NTFS | Local NTFS only |
+| Performance | Network latency | Local disk speed |
+| Best for | Enterprise | Lab / Single host |
 
 ---
 
-# ⚙️ 4. FSLogix Registry Configuration (Local Storage)
+# 🗂️ 3. Profile Container vs Office Container
+
+| Feature | Profile Container | Office Container |
+|--------|-------------------|------------------|
+| Full Windows profile | ✔ | ❌ |
+| Outlook OST | ✔ | ✔ |
+| Search roaming | ✔ | ✔ |
+| Teams cache | ✔ | ✔ |
+| Faster login | ❌ | ✔ |
+
+**Recommendation:**  
+Use **Profile Container only** for labs unless testing Office split scenarios.
+
+---
+
+# ⚙️ 4. FSLogix Base Registry Configuration (Local Mode)
 
 ```reg
 [HKLM\SOFTWARE\FSLogix\Profiles]
@@ -62,17 +76,24 @@ New-Item -ItemType Directory -Path "C:\FSLogix\Profiles"
 "VHDLocations"=multi:"C:\FSLogix\Profiles"
 ```
 
-This is the minimum required config.
+Create directories:
+
+```powershell
+New-Item -ItemType Directory -Path "C:\FSLogix\Profiles" -Force
+```
 
 ---
 
-# 🧹 5. Redirections.xml (Strongly Recommended)
+# 🧹 5. Redirections.xml (Deep Dive — Local Disk Edition)
+
+Same structure as Azure edition but optimised for shrinking the local VHDX:
 
 ```xml
 <FrxProfileFolderRedirection ExcludeCommonFolders="0">
   <RedirectedFolders>
     <Folder>AppData\Local\Temp</Folder>
     <Folder>AppData\Local\Microsoft\Windows\INetCache</Folder>
+    <Folder>AppData\Local\Microsoft\Edge</Folder>
     <Folder>AppData\Local\Microsoft\Teams</Folder>
     <Folder>AppData\LocalLow</Folder>
     <Folder>AppData\Local\CrashDumps</Folder>
@@ -80,19 +101,17 @@ This is the minimum required config.
 </FrxProfileFolderRedirection>
 ```
 
-Place file:
+Place in:
 
 ```
 C:\Program Files\FSLogix\Apps\Redirections.xml
 ```
 
-This reduces VHDX bloat and speeds up login.
-
 ---
 
-# 🌩️ 6. Cloud Cache (Local Mode)
+# 🌩️ 6. Cloud Cache (Local-to-Local Redundancy)
 
-You can combine multiple local disks:
+Even without Azure Files, Cloud Cache can be used to replicate profiles between local disks:
 
 ```reg
 [HKLM\SOFTWARE\FSLogix\Profiles]
@@ -100,58 +119,83 @@ You can combine multiple local disks:
 "CCDLocations"=multi:"type=local,connectionString=C:\FSLogix\Profiles;type=local,connectionString=D:\FSLogixBackup"
 ```
 
-Useful for redundancy testing.
+Useful for:
+
+- Testing corruption handling  
+- Simulating multi-disk resilience  
 
 ---
 
 # 📦 7. VHDX Sizing & Lifecycle
 
-Recommended:
+Recommended sizing for local FSLogix:
 
-- Dynamic VHDX  
-- 20–40 GB size  
-- Keep profiles clean via redirections  
+| Workload | VHDX Size |
+|----------|------------|
+| Light AVD lab | 10–20 GB |
+| Standard desktop | 20–30 GB |
+| Teams/Office-heavy | 30–40 GB |
 
-Lifecycle:
+Lifecycle diagram (mirrors Azure edition):
 
-```
-Login → Mount VHDX → Session → Dismount → Unlock
+```mermaid
+flowchart TD
+    Login["User Login"] --> Mount["Mount VHDX"]
+    Mount --> Online["Active Session"]
+    Online --> Dismount["Dismount on Logoff"]
+    Dismount --> Cleanup["Release Handles / Close"]
 ```
 
 ---
 
-# 🧰 8. FSLogix Logs
+# 🧰 8. FSLogix Logs (Same as Azure Edition)
+
+Log directory:
 
 ```
 C:\ProgramData\FSLogix\Logs\Profiles
 ```
 
-Useful logs:
+Most important logs:
 
-- `frxsvc.log`
-- `profile_load.log`
-- `frxdrv.log`
+| Log | Purpose |
+|------|----------|
+| frxsvc.log | Service startup + mount operations |
+| profile_load.log | Profile load cycle |
+| frxdrv.log | VHDX driver events |
 
 ---
 
-# 🚀 9. Teams Optimisation
+# 🚀 9. Teams & Office Optimisation (Local)
+
+Same structure as Azure version, adapted for local:
 
 ```reg
 [HKLM\SOFTWARE\Microsoft\Teams]
 "IsWVDEnvironment"=dword:1
 ```
 
-Plus redirect Teams cache via redirections.xml.
+Highly recommended:
+
+- Redirect Teams cache via Redirections.xml  
+- Ensure VHDX stays < 20–30 GB  
+- Use clean image with WebView2 preinstalled  
 
 ---
 
-# 🔐 10. Security Notes (Local Storage)
+# 🔐 10. Security Hardening (Local Edition)
 
-Local FSLogix storage:
+Unlike Azure Files, local storage relies only on **NTFS** and **BitLocker**.
 
-- Uses Windows NTFS permissions  
-- Is **not encrypted unless BitLocker is enabled**  
-- Not suitable for production  
+### Required NTFS permissions (local folder):
+
+| Identity | Permission |
+|----------|-------------|
+| Users | Modify |
+| SYSTEM | Full Control |
+| Administrators | Full Control |
+
+### Highly recommended:
 
 Enable BitLocker:
 
@@ -161,27 +205,31 @@ manage-bde -on C:
 
 ---
 
-# 🧪 11. Troubleshooting
+# 🧪 11. Troubleshooting Matrix (Matches Azure Version)
 
-| Issue | Cause | Fix |
-|-------|--------|------|
-| Temporary profile | Wrong VHDLocations | Fix registry |
-| Black login screen | VHDX corruption | Reset profile |
-| Slow login | Large VHDX | Use redirections.xml |
-| VHDX lock | Stuck `.lock` file | Delete it |
+| Symptom | Likely Cause | Fix |
+|---------|--------------|------|
+| Temp profile | VHDLocations misconfigured | Check registry |
+| Black login screen | Bloated VHDX / FSLogix hang | Trim VHDX + check redirections.xml |
+| `.lock` file persists | VHDX not dismounted cleanly | Delete `.lock` file |
+| Very slow login | Large Teams/Edge cache | Add redirections |
+| Profile corruption | Bad shutdown / host crash | Reset VHDX |
+| FSLogix not loading | Service disabled | Restart `frxsvc` |
 
 ---
 
 # ✔ 12. Summary
 
-FSLogix + Local Storage is:
+Local FSLogix (Advanced Edition) provides:
 
-- ✔ Simple  
-- ✔ Fast  
-- ✔ Zero-dependency  
-- ✔ Perfect for labs and AVD learning  
-- ❌ Not suitable for production  
+- ✓ Zero-dependency FSLogix testing  
+- ✓ Fast logons via local disk  
+- ✓ Ideal lab configuration  
+- ✓ Full compatibility with AVD  
+- ✓ Simple NTFS-based security  
+- ✓ Identical operational flow to Azure edition  
 
-Great for validating FSLogix behaviour without Azure Files.
+Not recommended for production — but **perfect for learning AVD deeply without Azure complexity**.
 
 ---
+
