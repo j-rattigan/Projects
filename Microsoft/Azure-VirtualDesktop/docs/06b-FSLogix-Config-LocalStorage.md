@@ -1,4 +1,4 @@
-# 06b – FSLogix Configuration (Advanced – Local SMB/DFS Edition)
+# 06b – FSLogix Configuration (Local SMB/DFS Edition)
 ![FSLogix](https://img.shields.io/badge/FSLogix-Advanced%20Configuration-orange)
 ![DFS](https://img.shields.io/badge/Storage-DFS%20Namespace-blue)
 ![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Profile%20Containers-0a84ff)
