@@ -1,0 +1,187 @@
+# 06 – FSLogix Configuration (Local File Storage Edition)
+![FSLogix](https://img.shields.io/badge/FSLogix-Local%20Profiles-orange)
+![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Lab%20Mode-0a84ff)
+
+---
+
+# 🧭 1. Overview
+This document provides FSLogix configuration guidance for **local file storage**, ideal for:
+
+- Home labs  
+- AVD single-host or small PoC  
+- Scenarios without Azure Files / Kerberos  
+- Fast troubleshooting environments  
+
+It removes the need for SMB shares, Azure Files, AADDS, Kerberos, or DNS complexity.
+
+---
+
+# 🗂️ 2. Architecture (Local Mode)
+
+```
+User Login
+   ↓
+FSLogix Service
+   ↓
+Mount local VHDX
+   ↓
+C:\FSLogix\Profiles\<username>\profile.vhdx
+```
+
+No network dependency → **fast + reliable for lab work**.
+
+---
+
+# 🧱 3. Local Profile Storage Structure
+
+Recommended folder:
+
+```
+C:\FSLogix\Profiles
+```
+
+Create folder:
+
+```powershell
+New-Item -ItemType Directory -Path "C:\FSLogix\Profiles"
+```
+
+---
+
+# ⚙️ 4. FSLogix Registry Configuration (Local Storage)
+
+```reg
+[HKLM\SOFTWARE\FSLogix\Profiles]
+"Enabled"=dword:1
+"VolumeType"="vhdx"
+"IsDynamic"=dword:1
+"SizeInMBs"=dword:30000
+"DeleteLocalProfileWhenVHDShouldApply"=dword:1
+"FlipFlopProfileDirectoryName"=dword:1
+"PreventLoginWithFailure"=dword:1
+"VHDLocations"=multi:"C:\FSLogix\Profiles"
+```
+
+This is the minimum required config.
+
+---
+
+# 🧹 5. Redirections.xml (Strongly Recommended)
+
+```xml
+<FrxProfileFolderRedirection ExcludeCommonFolders="0">
+  <RedirectedFolders>
+    <Folder>AppData\Local\Temp</Folder>
+    <Folder>AppData\Local\Microsoft\Windows\INetCache</Folder>
+    <Folder>AppData\Local\Microsoft\Teams</Folder>
+    <Folder>AppData\LocalLow</Folder>
+    <Folder>AppData\Local\CrashDumps</Folder>
+  </RedirectedFolders>
+</FrxProfileFolderRedirection>
+```
+
+Place file:
+
+```
+C:\Program Files\FSLogix\Apps\Redirections.xml
+```
+
+This reduces VHDX bloat and speeds up login.
+
+---
+
+# 🌩️ 6. Cloud Cache (Local Mode)
+
+You can combine multiple local disks:
+
+```reg
+[HKLM\SOFTWARE\FSLogix\Profiles]
+"CloudCacheEnabled"=dword:1
+"CCDLocations"=multi:"type=local,connectionString=C:\FSLogix\Profiles;type=local,connectionString=D:\FSLogixBackup"
+```
+
+Useful for redundancy testing.
+
+---
+
+# 📦 7. VHDX Sizing & Lifecycle
+
+Recommended:
+
+- Dynamic VHDX  
+- 20–40 GB size  
+- Keep profiles clean via redirections  
+
+Lifecycle:
+
+```
+Login → Mount VHDX → Session → Dismount → Unlock
+```
+
+---
+
+# 🧰 8. FSLogix Logs
+
+```
+C:\ProgramData\FSLogix\Logs\Profiles
+```
+
+Useful logs:
+
+- `frxsvc.log`
+- `profile_load.log`
+- `frxdrv.log`
+
+---
+
+# 🚀 9. Teams Optimisation
+
+```reg
+[HKLM\SOFTWARE\Microsoft\Teams]
+"IsWVDEnvironment"=dword:1
+```
+
+Plus redirect Teams cache via redirections.xml.
+
+---
+
+# 🔐 10. Security Notes (Local Storage)
+
+Local FSLogix storage:
+
+- Uses Windows NTFS permissions  
+- Is **not encrypted unless BitLocker is enabled**  
+- Not suitable for production  
+
+Enable BitLocker:
+
+```powershell
+manage-bde -on C:
+```
+
+---
+
+# 🧪 11. Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|--------|------|
+| Temporary profile | Wrong VHDLocations | Fix registry |
+| Black login screen | VHDX corruption | Reset profile |
+| Slow login | Large VHDX | Use redirections.xml |
+| VHDX lock | Stuck `.lock` file | Delete it |
+
+---
+
+# ✔ 12. Summary
+
+FSLogix + Local Storage is:
+
+- ✔ Simple  
+- ✔ Fast  
+- ✔ Zero-dependency  
+- ✔ Perfect for labs and AVD learning  
+- ❌ Not suitable for production  
+
+Great for validating FSLogix behaviour without Azure Files.
+
+---
