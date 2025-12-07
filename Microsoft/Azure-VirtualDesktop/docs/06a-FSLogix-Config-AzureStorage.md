@@ -1,4 +1,4 @@
-# 06a – FSLogix Configuration
+# 06a – FSLogix Configuration (Azure Storage)
 ![FSLogix](https://img.shields.io/badge/FSLogix-Advanced%20Configuration-orange)
 ![AzureFiles](https://img.shields.io/badge/Azure%20Files-Kerberos-0078D4)
 ![AVD](https://img.shields.io/badge/Azure%20Virtual%20Desktop-Profiles-0a84ff)
